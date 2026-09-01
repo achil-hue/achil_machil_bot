@@ -24,14 +24,16 @@ def start_health_check_server():
     server = HTTPServer(("0.0.0.0", port), HealthCheckHandler)
     server.serve_forever()
 
-# Прямое подключение к Binance без прокси
+# Подключение к фьючерсам Binance
 exchange = ccxt.binance({'options': {'defaultType': 'future'}, 'enableRateLimit': True})
 MIN_DROP_PERCENT = 0.50
 MAX_DROP_PERCENT = 5.00
 CHECK_INTERVAL = 60
 LOOKBACK_MINUTES = 15
+ALERT_COOLDOWN_MINUTES = 15
 
 price_history = {}
+last_alert_time = {}
 
 def send_telegram_alert(text):
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
@@ -43,6 +45,7 @@ def send_telegram_alert(text):
 
 def monitor():
     current_time = time.time()
+    print(f"[{time.strftime('%H:%M:%S')}] Проверка фьючерсов Binance...")
     try:
         tickers = exchange.fetch_tickers()
     except Exception as e:
@@ -50,8 +53,10 @@ def monitor():
         return
 
     for symbol, ticker in tickers.items():
-        if not symbol.endswith('/USDT') or any(c in symbol for c in ['BTC/', 'ETH/', 'USDC/', 'FDUSD/']):
+        # Подходят все USDT-фьючерсы (формат CCXT: SYMBOL/USDT:USDT)
+        if 'USDT' not in symbol or any(b in symbol for b in ['BTC/', 'ETH/', 'USDC/', 'FDUSD/']):
             continue
+
         last_price = ticker.get('last')
         if not last_price:
             continue
@@ -63,17 +68,25 @@ def monitor():
         cutoff = current_time - (LOOKBACK_MINUTES * 60)
         price_history[symbol] = [p for p in price_history[symbol] if p[0] >= cutoff]
 
+        if len(price_history[symbol]) < 2:
+            continue
+
         old_time, old_price = price_history[symbol][0]
         percent_change = ((last_price - old_price) / old_price) * 100
 
         if -MAX_DROP_PERCENT <= percent_change <= -MIN_DROP_PERCENT:
+            # Защита от частых повторных алертов по одной монете
+            if symbol in last_alert_time and (current_time - last_alert_time[symbol]) < (ALERT_COOLDOWN_MINUTES * 60):
+                continue
+
             drop_abs = abs(percent_change)
-            msg = f"🚨 *Binance:* `{symbol}` упал на -{drop_abs:.2f}%\nТекущая цена: `{last_price}`"
+            msg = f"🚨 *Binance Futures:* `{symbol}` упал на -{drop_abs:.2f}%\nТекущая цена: `{last_price}`"
             send_telegram_alert(msg)
+            last_alert_time[symbol] = current_time
 
 if __name__ == '__main__':
     threading.Thread(target=start_health_check_server, daemon=True).start()
-    send_telegram_alert("🚀 Бот успешно запущен на Render! Мониторинг 24/7 активен.")
+    send_telegram_alert("🚀 Бот (Futures) успешно запущен на Render! Мониторинг 24/7 активен.")
     while True:
         monitor()
         time.sleep(CHECK_INTERVAL)
