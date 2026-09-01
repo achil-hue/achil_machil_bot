@@ -6,7 +6,7 @@ import requests
 import ccxt
 
 # Данные для уведомлений
-TELEGRAM_BOT_TOKEN = "8820227516:AAEASdSo5X3de7-bqzSt1ey1hrGM_GM7j0E"
+TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = "1424991373"
 
 # Заглушка веб-сервера для бесплатного тарифа Render
