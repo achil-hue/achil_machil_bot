@@ -25,7 +25,7 @@ def start_health_check_server():
     server.serve_forever()
 
 # Прямое подключение к Binance без прокси
-exchange = ccxt.binance({'enableRateLimit': True})
+exchange = ccxt.binance({'options': {'defaultType': 'future'}, 'enableRateLimit': True})
 MIN_DROP_PERCENT = 0.50
 MAX_DROP_PERCENT = 5.00
 CHECK_INTERVAL = 60
