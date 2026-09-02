@@ -6,7 +6,7 @@ import requests
 import ccxt
 
 # Данные для уведомлений
-TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
+TELEGRAM_BOT_TOKEN = "8820227516:AAEASdSo5X3de7-bqzSt1ey1hrGM_GM7j0E"
 TELEGRAM_CHAT_ID = "1424991373"
 
 # Заглушка веб-сервера для бесплатного тарифа Render
@@ -26,11 +26,11 @@ def start_health_check_server():
 
 # Подключение к фьючерсам Binance
 exchange = ccxt.binance({'options': {'defaultType': 'future'}, 'enableRateLimit': True})
-MIN_DROP_PERCENT = 1.00
+MIN_DROP_PERCENT = 0.50
 MAX_DROP_PERCENT = 5.00
 CHECK_INTERVAL = 60
-LOOKBACK_MINUTES = 10
-ALERT_COOLDOWN_MINUTES = 10
+LOOKBACK_MINUTES = 15
+ALERT_COOLDOWN_MINUTES = 15
 
 price_history = {}
 last_alert_time = {}
