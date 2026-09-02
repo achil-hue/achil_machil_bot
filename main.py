@@ -26,7 +26,7 @@ def start_health_check_server():
 
 # Подключение к фьючерсам Binance
 exchange = ccxt.binance({'options': {'defaultType': 'future'}, 'enableRateLimit': True})
-MIN_DROP_PERCENT = 0.50
+MIN_DROP_PERCENT = 0.05
 MAX_DROP_PERCENT = 5.00
 CHECK_INTERVAL = 60
 LOOKBACK_MINUTES = 15
