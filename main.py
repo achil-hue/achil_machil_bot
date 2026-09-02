@@ -1,24 +1,24 @@
 import os
 import time
+import json
+import asyncio
 import threading
 from http.server import HTTPServer, BaseHTTPRequestHandler
 import requests
-import ccxt
+import websockets
 
-# Переменные окружения из панелей Render
+# Переменные окружения из панели Render
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # Настройки стратегии
 MIN_DROP_PERCENT = 1.00
 MAX_DROP_PERCENT = 5.00
-CHECK_INTERVAL = 90  # Пауза 90 секунд для безопасности лимитов
 LOOKBACK_MINUTES = 15
 ALERT_COOLDOWN_MINUTES = 15
 
 price_history = {}
 last_alert_time = {}
-consecutive_errors = 0
 
 class HealthCheckHandler(BaseHTTPRequestHandler):
     def do_GET(self):
@@ -47,69 +47,62 @@ def send_telegram_alert(text):
     except Exception as e:
         print(f"Ошибка сети Telegram: {e}")
 
-# Инициализация подключения к Binance Futures
-exchange = ccxt.binance({
-    'options': {'defaultType': 'future'},
-    'enableRateLimit': True,
-    'timeout': 10000,
-})
-
-def monitor():
-    global consecutive_errors
-    current_time = time.time()
-    print(f"[{time.strftime('%H:%M:%S')}] Проверка фьючерсов Binance...")
-
-    try:
-        # Используем ультра-легкий запрос цен (Вес = 2 вместо 40)
-        tickers_data = exchange.fapiPublicGetTickerPrice()
-        consecutive_errors = 0
-    except Exception as e:
-        consecutive_errors += 1
-        print(f"⚠️ Ошибка получения данных с Binance ({consecutive_errors}): {e}")
-        if consecutive_errors == 5:
-            send_telegram_alert(f"🚨 *Проблема с ботом:* Лимит запросов или сбой сети.\n\n`Ошибка: {e}`")
-        return
-
-    for item in tickers_data:
-        symbol = item.get('symbol', '')
-        
-        # Фильтруем только USDT фьючерсы и исключаем главные монеты
-        if not symbol.endswith('USDT') or any(b in symbol for b in ['BTCUSDT', 'ETHUSDT', 'USDCUSDT', 'FDUSDUSDT']):
-            continue
-
+async def binance_ws_listener():
+    # Поток со всеми мини-тиками фьючерсов Binance
+    url = "wss://fstream.binance.com/ws/!miniTicker@arr"
+    
+    while True:
         try:
-            last_price = float(item.get('price', 0))
-        except (ValueError, TypeError):
-            continue
+            print("Подключение к Binance WebSocket...")
+            async with websockets.connect(url) as ws:
+                send_telegram_alert("⚡ *WebSocket бот успешно запущен!* Прямой поток цен Binance активен 24/7 без лимитов.")
+                
+                while True:
+                    msg = await ws.recv()
+                    data = json.loads(msg)
+                    current_time = time.time()
 
-        if last_price <= 0:
-            continue
+                    for item in data:
+                        symbol = item.get('s', '')
+                        
+                        # Фильтр: только USDT фьючерсы без основных монет
+                        if not symbol.endswith('USDT') or any(b in symbol for b in ['BTCUSDT', 'ETHUSDT', 'USDCUSDT', 'FDUSDUSDT']):
+                            continue
 
-        if symbol not in price_history:
-            price_history[symbol] = []
+                        try:
+                            last_price = float(item.get('c', 0))
+                        except (ValueError, TypeError):
+                            continue
 
-        price_history[symbol].append((current_time, last_price))
-        cutoff = current_time - (LOOKBACK_MINUTES * 60)
-        price_history[symbol] = [p for p in price_history[symbol] if p[0] >= cutoff]
+                        if last_price <= 0:
+                            continue
 
-        if len(price_history[symbol]) < 2:
-            continue
+                        if symbol not in price_history:
+                            price_history[symbol] = []
 
-        old_time, old_price = price_history[symbol][0]
-        percent_change = ((last_price - old_price) / old_price) * 100
+                        price_history[symbol].append((current_time, last_price))
+                        cutoff = current_time - (LOOKBACK_MINUTES * 60)
+                        price_history[symbol] = [p for p in price_history[symbol] if p[0] >= cutoff]
 
-        if -MAX_DROP_PERCENT <= percent_change <= -MIN_DROP_PERCENT:
-            if symbol in last_alert_time and (current_time - last_alert_time[symbol]) < (ALERT_COOLDOWN_MINUTES * 60):
-                continue
+                        if len(price_history[symbol]) < 2:
+                            continue
 
-            drop_abs = abs(percent_change)
-            msg = f"🚨 *Binance Futures:* `{symbol}` упал на -{drop_abs:.2f}%\nТекущая цена: `{last_price}`"
-            send_telegram_alert(msg)
-            last_alert_time[symbol] = current_time
+                        old_time, old_price = price_history[symbol][0]
+                        percent_change = ((last_price - old_price) / old_price) * 100
+
+                        if -MAX_DROP_PERCENT <= percent_change <= -MIN_DROP_PERCENT:
+                            if symbol in last_alert_time and (current_time - last_alert_time[symbol]) < (ALERT_COOLDOWN_MINUTES * 60):
+                                continue
+
+                            drop_abs = abs(percent_change)
+                            alert_msg = f"🚨 *Binance Futures:* `{symbol}` упал на -{drop_abs:.2f}%\nТекущая цена: `{last_price}`"
+                            send_telegram_alert(alert_msg)
+                            last_alert_time[symbol] = current_time
+
+        except Exception as e:
+            print(f"Ошибка WebSocket: {e}. Переподключение через 5 секунд...")
+            await asyncio.sleep(5)
 
 if __name__ == '__main__':
     threading.Thread(target=start_health_check_server, daemon=True).start()
-    send_telegram_alert("🚀 Оптимизированный бот запущен! Мониторинг активен без превышения лимитов.")
-    while True:
-        monitor()
-        time.sleep(CHECK_INTERVAL)
+    asyncio.run(binance_ws_listener())
