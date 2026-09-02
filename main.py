@@ -5,16 +5,16 @@ from http.server import HTTPServer, BaseHTTPRequestHandler
 import requests
 import ccxt
 
-# Переменные окружения (задаются в панели Render)
+# Переменные окружения из панелей Render
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # Настройки стратегии
 MIN_DROP_PERCENT = 1.00
 MAX_DROP_PERCENT = 5.00
-CHECK_INTERVAL = 60
-LOOKBACK_MINUTES = 10
-ALERT_COOLDOWN_MINUTES = 10
+CHECK_INTERVAL = 90  # Пауза 90 секунд для безопасности лимитов
+LOOKBACK_MINUTES = 15
+ALERT_COOLDOWN_MINUTES = 15
 
 price_history = {}
 last_alert_time = {}
@@ -60,25 +60,29 @@ def monitor():
     print(f"[{time.strftime('%H:%M:%S')}] Проверка фьючерсов Binance...")
 
     try:
-        tickers = exchange.fetch_tickers()
-        consecutive_errors = 0  # Сброс счетчика ошибок при успехе
+        # Используем ультра-легкий запрос цен (Вес = 2 вместо 40)
+        tickers_data = exchange.fapiPublicGetTickerPrice()
+        consecutive_errors = 0
     except Exception as e:
         consecutive_errors += 1
-        error_msg = f"⚠️ Ошибка получения данных с Binance ({consecutive_errors}): {e}"
-        print(error_msg)
-        
-        # Уведомляем в ТГ, если биржа недоступна 3 итерации подряд
-        if consecutive_errors == 3:
-            send_telegram_alert(f"🚨 *Проблема с ботом:* Binance не отвечает 3 минуты подряд.\nВозможен бан IP со стороны биржи.\n\n`Ошибка: {e}`")
+        print(f"⚠️ Ошибка получения данных с Binance ({consecutive_errors}): {e}")
+        if consecutive_errors == 5:
+            send_telegram_alert(f"🚨 *Проблема с ботом:* Лимит запросов или сбой сети.\n\n`Ошибка: {e}`")
         return
 
-    for symbol, ticker in tickers.items():
-        # Фильтр: только USDT-фьючерсы без базовых монет
-        if 'USDT' not in symbol or any(b in symbol for b in ['BTC/', 'ETH/', 'USDC/', 'FDUSD/']):
+    for item in tickers_data:
+        symbol = item.get('symbol', '')
+        
+        # Фильтруем только USDT фьючерсы и исключаем главные монеты
+        if not symbol.endswith('USDT') or any(b in symbol for b in ['BTCUSDT', 'ETHUSDT', 'USDCUSDT', 'FDUSDUSDT']):
             continue
 
-        last_price = ticker.get('last')
-        if not last_price:
+        try:
+            last_price = float(item.get('price', 0))
+        except (ValueError, TypeError):
+            continue
+
+        if last_price <= 0:
             continue
 
         if symbol not in price_history:
@@ -105,7 +109,7 @@ def monitor():
 
 if __name__ == '__main__':
     threading.Thread(target=start_health_check_server, daemon=True).start()
-    send_telegram_alert("🚀 Бот (Futures) запущен и готов к работе!")
+    send_telegram_alert("🚀 Оптимизированный бот запущен! Мониторинг активен без превышения лимитов.")
     while True:
         monitor()
         time.sleep(CHECK_INTERVAL)
