@@ -29,8 +29,8 @@ exchange = ccxt.binance({'options': {'defaultType': 'future'}, 'enableRateLimit'
 MIN_DROP_PERCENT = 0.50
 MAX_DROP_PERCENT = 5.00
 CHECK_INTERVAL = 60
-LOOKBACK_MINUTES = 15
-ALERT_COOLDOWN_MINUTES = 15
+LOOKBACK_MINUTES = 10
+ALERT_COOLDOWN_MINUTES = 10
 
 price_history = {}
 last_alert_time = {}
