@@ -11,10 +11,10 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # Порог для моментального теста (реагирует на минимальный сдвиг цены)
-MIN_DROP_PERCENT = 0.0001
+MIN_DROP_PERCENT = 0.50
 MAX_DROP_PERCENT = 50.00
 LOOKBACK_MINUTES = 15
-ALERT_COOLDOWN_MINUTES = 1
+ALERT_COOLDOWN_MINUTES = 15
 
 price_history = {}
 last_alert_time = {}
