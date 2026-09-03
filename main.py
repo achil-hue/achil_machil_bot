@@ -11,7 +11,7 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # Рабочие настройки стратегии
-MIN_DROP_PERCENT = 0.80       # Порог падения в % от 15-мин пика
+MIN_DROP_PERCENT = 0.001      # Порог падения в % от 15-мин пика
 MAX_DROP_PERCENT = 50.00      # Максимальное падение
 LOOKBACK_MINUTES = 15         # Окно анализа (минуты)
 ALERT_COOLDOWN_MINUTES = 15   # Кулдаун алертов по одной монете
