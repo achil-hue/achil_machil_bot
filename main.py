@@ -11,10 +11,10 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # Рабочие настройки стратегии
-MIN_DROP_PERCENT = 0.0001     # Просадка от 0.80% (для теста можете временно поставить 0.001)
-MAX_DROP_PERCENT = 50.00      # Максимальная просадка до 50%
-LOOKBACK_MINUTES = 15         # Окно анализа 15 минут
-ALERT_COOLDOWN_MINUTES = 15   # Задержка повторных сигналов по монете
+MIN_DROP_PERCENT = 0.80       # Порог падения в % от 15-мин пика
+MAX_DROP_PERCENT = 50.00      # Максимальное падение
+LOOKBACK_MINUTES = 15         # Окно анализа (минуты)
+ALERT_COOLDOWN_MINUTES = 15   # Кулдаун алертов по одной монете
 
 price_history = {}
 last_alert_time = {}
@@ -39,17 +39,26 @@ async def send_telegram_alert(text):
         return
     
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
-    payload = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "Markdown"}
     
     def _post():
+        # Попытка 1: Отправка с HTML форматированием
+        payload_html = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}
         try:
-            r = requests.post(url, json=payload, timeout=5)
-            if r.status_code != 200:
-                print(f"Ошибка Telegram API ({r.status_code}): {r.text}", flush=True)
+            r = requests.post(url, json=payload_html, timeout=5)
+            if r.status_code == 200:
+                return
+            print(f"Предупреждение Telegram HTML ({r.status_code}): {r.text}", flush=True)
         except Exception as e:
             print(f"Ошибка сети Telegram: {e}", flush=True)
 
-    # Выполнение сетевого запроса в отдельном потоке без блокировки WebSocket
+        # Попытка 2: Резервная отправка без разметки (чистый текст), если HTML был отклонен
+        plain_text = text.replace("<b>", "").replace("</b>", "").replace("<code>", "").replace("</code>", "")
+        payload_plain = {"chat_id": TELEGRAM_CHAT_ID, "text": plain_text}
+        try:
+            requests.post(url, json=payload_plain, timeout=5)
+        except Exception as e:
+            print(f"Ошибка резервной отправки Telegram: {e}", flush=True)
+
     await asyncio.to_thread(_post)
 
 async def binance_ws_listener():
@@ -59,9 +68,8 @@ async def binance_ws_listener():
     while True:
         try:
             print("Подключение к Binance WebSocket...", flush=True)
-            # ping_interval и ping_timeout защищают соединение от незаметного обрыва
             async with websockets.connect(url, ping_interval=20, ping_timeout=20) as ws:
-                await send_telegram_alert("⚡ *WebSocket бот успешно запущен!* Анализ просадок активен 24/7.")
+                await send_telegram_alert("⚡ <b>WebSocket бот успешно запущен!</b> Мониторинг просадок активен 24/7.")
                 
                 while True:
                     msg = await ws.recv()
@@ -71,13 +79,11 @@ async def binance_ws_listener():
                     except Exception:
                         continue
 
-                    # Защита: Binance иногда присылает словарь с системными сообщениями вместо списка тикеров
                     if not isinstance(data, list):
                         continue
 
                     current_time = time.time()
 
-                    # Статус в логи каждые 10 минут
                     if current_time - last_log_time > 600:
                         print(f"[{time.strftime('%H:%M:%S')}] WebSocket активен. Монет в отслеживании: {len(price_history)}", flush=True)
                         last_log_time = current_time
@@ -88,7 +94,6 @@ async def binance_ws_listener():
 
                         symbol = item.get('s', '')
                         
-                        # Фильтрация: только USDT фьючерсы, исключая стейблкоины и биткоин/эфир
                         if not symbol.endswith('USDT') or any(b in symbol for b in ['BTCUSDT', 'ETHUSDT', 'USDCUSDT', 'FDUSDUSDT']):
                             continue
 
@@ -110,7 +115,6 @@ async def binance_ws_listener():
                         if len(price_history[symbol]) < 2:
                             continue
 
-                        # Расчет падения от МАКСИМАЛЬНОЙ цены за 15 минут
                         max_price = max(p[1] for p in price_history[symbol])
                         percent_change = ((last_price - max_price) / max_price) * 100
 
@@ -120,12 +124,11 @@ async def binance_ws_listener():
 
                             drop_abs = abs(percent_change)
                             alert_msg = (
-                                f"🚨 *Binance Futures:* `{symbol}`\n"
-                                f"Падение: *-{drop_abs:.2f}%* от пика (`{max_price:.4f}`)\n"
-                                f"Текущая цена: `{last_price:.4f}`"
+                                f"🚨 <b>Binance Futures:</b> <code>{symbol}</code>\n"
+                                f"Падение: <b>-{drop_abs:.2f}%</b> от пика (<code>{max_price:.4f}</code>)\n"
+                                f"Текущая цена: <code>{last_price:.4f}</code>"
                             )
                             last_alert_time[symbol] = current_time
-                            # Фоновый асинхронный вызов отправки
                             asyncio.create_task(send_telegram_alert(alert_msg))
 
         except Exception as e:
