@@ -11,7 +11,7 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # Рабочие настройки стратегии
-MIN_DROP_PERCENT = 0.80       # Просадка от 0.80% (для теста можете временно поставить 0.001)
+MIN_DROP_PERCENT = 0.001      # Просадка от 0.80% (для теста можете временно поставить 0.001)
 MAX_DROP_PERCENT = 50.00      # Максимальная просадка до 50%
 LOOKBACK_MINUTES = 15         # Окно анализа 15 минут
 ALERT_COOLDOWN_MINUTES = 15   # Задержка повторных сигналов по монете
