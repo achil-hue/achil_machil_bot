@@ -10,11 +10,11 @@ import websockets
 TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
-# Рабочие настройки стратегии
-MIN_DROP_PERCENT = 0.001      # Порог падения в % от 15-мин пика
-MAX_DROP_PERCENT = 50.00      # Максимальное падение
-LOOKBACK_MINUTES = 15         # Окно анализа (минуты)
-ALERT_COOLDOWN_MINUTES = 15   # Кулдаун алертов по одной монете
+# Порог для моментального теста (реагирует на минимальный сдвиг цены)
+MIN_DROP_PERCENT = 0.0001
+MAX_DROP_PERCENT = 50.00
+LOOKBACK_MINUTES = 15
+ALERT_COOLDOWN_MINUTES = 1
 
 price_history = {}
 last_alert_time = {}
@@ -35,33 +35,38 @@ def start_health_check_server():
 
 async def send_telegram_alert(text):
     if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        print("ОШИБКА: TELEGRAM_BOT_TOKEN или TELEGRAM_CHAT_ID не заданы!", flush=True)
+        print("ОШИБКА: Токен или Chat ID не найдены в переменных Render!", flush=True)
         return
     
     url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
     
     def _post():
-        # Попытка 1: Отправка с HTML форматированием
+        # Попытка 1: HTML разметка
         payload_html = {"chat_id": TELEGRAM_CHAT_ID, "text": text, "parse_mode": "HTML"}
         try:
             r = requests.post(url, json=payload_html, timeout=5)
             if r.status_code == 200:
+                print("Сообщение успешно отправлено в Telegram", flush=True)
                 return
-            print(f"Предупреждение Telegram HTML ({r.status_code}): {r.text}", flush=True)
+            print(f"Ошибка Telegram HTML ({r.status_code}): {r.text}", flush=True)
         except Exception as e:
             print(f"Ошибка сети Telegram: {e}", flush=True)
 
-        # Попытка 2: Резервная отправка без разметки (чистый текст), если HTML был отклонен
+        # Попытка 2: Резервная отправка чистым текстом
         plain_text = text.replace("<b>", "").replace("</b>", "").replace("<code>", "").replace("</code>", "")
         payload_plain = {"chat_id": TELEGRAM_CHAT_ID, "text": plain_text}
         try:
             requests.post(url, json=payload_plain, timeout=5)
         except Exception as e:
-            print(f"Ошибка резервной отправки Telegram: {e}", flush=True)
+            print(f"Ошибка резервной отправки: {e}", flush=True)
 
     await asyncio.to_thread(_post)
 
 async def binance_ws_listener():
+    # Отправка сразу при старте процесса
+    print("Запуск бота и отправка первого приветствия...", flush=True)
+    await send_telegram_alert("🚀 <b>Скрипт запущен!</b> Подключение к Binance WebSocket...")
+
     url = "wss://fstream.binance.com/ws/!miniTicker@arr"
     last_log_time = time.time()
     
@@ -69,7 +74,7 @@ async def binance_ws_listener():
         try:
             print("Подключение к Binance WebSocket...", flush=True)
             async with websockets.connect(url, ping_interval=20, ping_timeout=20) as ws:
-                await send_telegram_alert("⚡ <b>WebSocket бот успешно запущен!</b> Мониторинг просадок активен 24/7.")
+                print("WebSocket успешно подключен!", flush=True)
                 
                 while True:
                     msg = await ws.recv()
@@ -84,8 +89,8 @@ async def binance_ws_listener():
 
                     current_time = time.time()
 
-                    if current_time - last_log_time > 600:
-                        print(f"[{time.strftime('%H:%M:%S')}] WebSocket активен. Монет в отслеживании: {len(price_history)}", flush=True)
+                    if current_time - last_log_time > 300:
+                        print(f"[{time.strftime('%H:%M:%S')}] WebSocket активен. Монет в памяти: {len(price_history)}", flush=True)
                         last_log_time = current_time
 
                     for item in data:
@@ -125,7 +130,7 @@ async def binance_ws_listener():
                             drop_abs = abs(percent_change)
                             alert_msg = (
                                 f"🚨 <b>Binance Futures:</b> <code>{symbol}</code>\n"
-                                f"Падение: <b>-{drop_abs:.2f}%</b> от пика (<code>{max_price:.4f}</code>)\n"
+                                f"Падение: <b>-{drop_abs:.4f}%</b> от пика (<code>{max_price:.4f}</code>)\n"
                                 f"Текущая цена: <code>{last_price:.4f}</code>"
                             )
                             last_alert_time[symbol] = current_time
