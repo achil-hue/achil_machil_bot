@@ -12,10 +12,10 @@ TELEGRAM_BOT_TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID", "")
 
 # Рабочие параметры анализа
-MIN_DROP_PERCENT = 0.80        # Порог падения (%): срабатывание от -0.80%
+MIN_DROP_PERCENT = 0.50        # Порог падения (%): срабатывание от -0.80%
 MAX_DROP_PERCENT = 50.00       # Защитный максимум от аномалий/дампов
-LOOKBACK_MINUTES = 15          # Окно анализа пиковой цены (минуты)
-ALERT_COOLDOWN_MINUTES = 15    # Пауза между повторными сигналами по одной монете (минуты)
+LOOKBACK_MINUTES = 10          # Окно анализа пиковой цены (минуты)
+ALERT_COOLDOWN_MINUTES = 10    # Пауза между повторными сигналами по одной монете (минуты)
 
 # Хранилища состояния
 price_history = {}
